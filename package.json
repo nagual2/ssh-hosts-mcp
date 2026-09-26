@@ -1,0 +1,16 @@
+{
+  "name": "ssh-hosts-mcp",
+  "version": "1.1.0",
+  "private": true,
+  "type": "module",
+  "description": "Unified SSH MCP with host registry (direct + ssh3 + WSL/DSLab)",
+  "main": "index.mjs",
+  "scripts": {
+    "start": "node index.mjs",
+    "test": "node --test test/lib.test.mjs"
+  },
+  "dependencies": {
+    "@modelcontextprotocol/sdk": "^1.12.1",
+    "ssh2": "^1.16.0"
+  }
+}

@@ -1,0 +1,73 @@
+{
+  "version": 1,
+  "hosts": {
+    "prod-openwrt": {
+      "label": "Production OpenWrt (captive portal)",
+      "transport": "direct",
+      "host": "192.0.2.1",
+      "user": "root",
+      "port": 22,
+      "privateKeyPath": "~/.ssh/id_ed25519_openwrt",
+      "scpLegacy": true,
+      "notes": "DNS: openwrt.example.lan. dropbear scp needs -O from CLI."
+    },
+    "openwrt-dev": {
+      "label": "OpenWrt-dev VM (Hyper-V host-only)",
+      "transport": "direct",
+      "host": "192.0.2.56",
+      "user": "root",
+      "port": 22,
+      "privateKeyPath": "~/.ssh/id_ed25519_openwrt",
+      "scpLegacy": true,
+      "notes": "VM often powered off."
+    },
+    "mikrotik-dev": {
+      "label": "MikroTik-dev CHR VM",
+      "transport": "direct",
+      "host": "192.0.2.45",
+      "user": "user",
+      "port": 22,
+      "privateKeyPath": "~/.ssh/id_ed25519_mikrotik",
+      "shell": "routeros",
+      "notes": "RouterOS CLI, not bash. VM often powered off."
+    },
+    "minisforum": {
+      "label": "Minisforum Z83-F (Linux)",
+      "transport": "direct",
+      "host": "192.0.2.125",
+      "user": "user",
+      "port": 22,
+      "privateKeyPath": "~/.ssh/id_ed25519_minisforum",
+      "notes": "Also reachable over ssh3: see minisforum-ssh3."
+    },
+    "minisforum-ssh3": {
+      "label": "Minisforum over ssh3 (UDP 443)",
+      "transport": "ssh3",
+      "host": "minisforum.example.lan",
+      "port": 443,
+      "urlPath": "/ssh3-term",
+      "user": "user",
+      "privateKeyPath": "~/.ssh/id_ed25519_minisforum",
+      "clientPath": "ssh3-client",
+      "notes": "Server cert pinned in ~/.ssh3/known_hosts (TOFU). ssh3 v0.1.8+."
+    },
+    "wsl-ssh3": {
+      "label": "WSL ssh3 server (dual-stack)",
+      "transport": "ssh3",
+      "host": "wsl.example.lan",
+      "port": 443,
+      "urlPath": "/ssh3-term",
+      "user": "user",
+      "privateKeyPath": "~/.ssh/id_ed25519_wsl3",
+      "clientPath": "ssh3-client",
+      "notes": "Example ssh3 host. Copy to hosts.local.json with real values."
+    },
+    "dslab-ml": {
+      "label": "DSLab ML server (coder POD)",
+      "transport": "wsl",
+      "wslHost": "project-p-example",
+      "user": "coder",
+      "notes": "WSL ~/.ssh/config.d with JWT proxy. No scp - use tar|ssh or ssh cat."
+    }
+  }
+}
