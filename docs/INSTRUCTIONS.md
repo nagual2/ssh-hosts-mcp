@@ -41,7 +41,7 @@ Config file precedence: env `SSH_HOSTS_CONFIG` → `hosts.local.json` (real addr
 | `minisforum` | 192.0.2.125 | bash | direct | Linux box |
 | `minisforum-ssh3` | `user@minisforum.example.lan:443/ssh3-term` | bash | **ssh3** | Same box over ssh3 (UDP 443, key-only) |
 | `wsl-ssh3` | `user@wsl.example.lan:443/ssh3-term` | bash | **ssh3** | WSL ssh3-server, dual-stack IPv4+IPv6 |
-| `dslab-ml` | WSL alias | bash | **wsl** | JWT proxy ~15 min; refresh via `Scripts/dslab-reconnect.sh` |
+| `dslab-ml` | WSL alias | bash | **wsl** | JWT proxy ~15 min; refresh auth via your own reconnect helper |
 
 Full host details (serial console, MACs, keys): Cursor rule `@ssh-servers` / `.cursor/rules/ssh-servers.mdc`.
 

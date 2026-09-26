@@ -31,7 +31,7 @@ function loadHostsConfig() {
 }
 
 function loadInstructions() {
-  const instructionsPath = path.join(__dirname, 'INSTRUCTIONS.md');
+  const instructionsPath = path.join(__dirname, 'docs', 'INSTRUCTIONS.md');
   return fs.readFileSync(instructionsPath, 'utf8');
 }
 

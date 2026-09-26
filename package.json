@@ -4,6 +4,7 @@
   "private": true,
   "type": "module",
   "description": "Unified SSH MCP with host registry (direct + ssh3 + WSL/DSLab)",
+  "license": "MIT",
   "main": "index.mjs",
   "scripts": {
     "start": "node index.mjs",
