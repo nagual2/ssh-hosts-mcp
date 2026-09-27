@@ -452,7 +452,7 @@ const TOOLS = [
   },
   {
     name: 'ssh_read_file',
-    description: 'Read a remote file (direct hosts only; uses cat)',
+    description: 'Read a remote file via cat (direct and ssh3 hosts; not wsl)',
     inputSchema: {
       type: 'object',
       properties: {
@@ -466,7 +466,7 @@ const TOOLS = [
   {
     name: 'ssh_write_file',
     description:
-      'Write remote file via SFTP (base64-exec fallback). Param is filePath (not path). direct hosts only.',
+      'Write remote file: SFTP on direct hosts, base64-exec on ssh3 (48 KB limit). Param is filePath (not path).',
     inputSchema: {
       type: 'object',
       properties: {
@@ -489,7 +489,7 @@ const TOOLS = [
 ];
 
 const server = new Server(
-  { name: 'ssh-hosts-mcp', version: '1.1.0' },
+  { name: 'ssh-hosts-mcp', version: '1.1.1' },
   { capabilities: { tools: {} }, instructions: loadInstructions() },
 );
 
