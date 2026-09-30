@@ -331,7 +331,10 @@ function execSsh3(profile, command, timeoutMs) {
   const env = { ...process.env, SSH3_LOG_LEVEL: profile.logLevel ?? 'error' };
 
   return new Promise((resolve, reject) => {
-    const child = spawn(clientPath, args, { windowsHide: true, env });
+    // stdin must not be an open pipe: the current ssh3 client streams its
+    // stdin to the remote and blocks forever when the parent never closes it
+    // (the remote command may already have exited). Exec carries no input.
+    const child = spawn(clientPath, args, { windowsHide: true, env, stdio: ['ignore', 'pipe', 'pipe'] });
     let stdout = '';
     let stderr = '';
     let settled = false;
