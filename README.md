@@ -20,6 +20,12 @@ Three transports are supported:
 
 - **Host registry** — `host_id` abstraction; the agent never guesses IP/user/key
 - **Three transports** — direct `ssh2`, `ssh3` (QUIC over UDP), WSL-proxied SSH
+- **Host-key pinning** — `trustedHostKey` (sha256) verified on every direct connection; unpinned hosts are flagged in `ssh_list_hosts`; ssh3 pins via TOFU `known_hosts`
+- **Command policy** — built-in never-allowed denylist (`rm -rf /`, `mkfs`, `dd of=/dev/*`, `curl|sh`, …) plus per-host/`defaults` `policy.deny`/`policy.allow` regex lists; deny wins, whitelist mode is fail-closed (RouterOS pipes exempt)
+- **Path confinement** — optional `allowedPaths` (read/write prefixes), absolute POSIX paths only, `..` traversal rejected
+- **Output & time limits** — per-host `maxOutputBytes` truncation with an explicit marker; per-host `timeoutMs` (per-call overrides)
+- **Paged file reads** — `ssh_read_file` returns a byte range (default 64 KB) with `nextOffset` for continuation
+- **Health snapshots** — `ssh_server_status`: CPU/mem/disk/uptime in one call, busybox/OpenWrt and RouterOS variants
 - **File transfer** — SFTP with automatic base64-exec fallback for hosts without sftp-server (OpenWrt/dropbear), written bytes verified
 - **RouterOS-aware** — MikroTik hosts flagged with `"shell": "routeros"`
 - **Server instructions** — `docs/INSTRUCTIONS.md` is served to the MCP client automatically
@@ -31,10 +37,11 @@ Three transports are supported:
 
 | Tool | Purpose |
 |------|---------|
-| `ssh_list_hosts` | List configured hosts and metadata |
-| `ssh_exec` | Run a remote command |
-| `ssh_read_file` | Read a remote file (`cat`) |
+| `ssh_list_hosts` | List configured hosts and metadata (incl. `hostKeyPinned`) |
+| `ssh_exec` | Run a remote command (policy-checked, output capped) |
+| `ssh_read_file` | Read a byte-range of a remote file (default 64 KB, continue via `offset`) |
 | `ssh_write_file` | Write a remote file (SFTP on direct hosts, base64-exec on ssh3; ≤48 KB) |
+| `ssh_server_status` | CPU/mem/disk/uptime snapshot |
 
 ## Installation
 
@@ -70,6 +77,10 @@ Config precedence: `SSH_HOSTS_CONFIG` env override → `hosts.local.json` (real 
 ```json
 {
   "version": 1,
+  "defaults": {
+    "maxOutputBytes": 262144,
+    "policy": { "deny": ["^reboot"] }
+  },
   "hosts": {
     "my-host": {
       "label": "Linux box",
@@ -77,7 +88,8 @@ Config precedence: `SSH_HOSTS_CONFIG` env override → `hosts.local.json` (real 
       "host": "192.0.2.10",
       "user": "root",
       "port": 22,
-      "privateKeyPath": "~/.ssh/id_ed25519"
+      "privateKeyPath": "~/.ssh/id_ed25519",
+      "trustedHostKey": "SHA256:…"
     },
     "my-ssh3-host": {
       "label": "Same box over ssh3",

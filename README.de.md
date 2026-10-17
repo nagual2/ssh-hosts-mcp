@@ -20,6 +20,12 @@ Drei Transports werden unterstützt:
 
 - **Host-Registry** — `host_id`-Abstraktion; der Agent rät nie IP/Benutzer/Schlüssel
 - **Drei Transports** — direkt per `ssh2`, `ssh3` (QUIC über UDP), SSH über WSL-Proxy
+- **Host-Key-Pinning** — `trustedHostKey` (sha256) wird bei jeder direkten Verbindung geprüft; Hosts ohne Pin werden in `ssh_list_hosts` markiert; ssh3 über TOFU-`known_hosts`
+- **Befehls-Policy** — eingebaute Never-Allowed-Denylist (`rm -rf /`, `mkfs`, `dd of=/dev/*`, `curl|sh`, …) plus pro Host/`defaults` regex-Listen `policy.deny`/`policy.allow`; deny gewinnt, Whitelist-Modus ist fail-closed (RouterOS-Pipes ausgenommen)
+- **Pfad-Confinement** — optionale `allowedPaths` (read/write-Präfixe), nur absolute POSIX-Pfade, `..`-Traversal wird abgelehnt
+- **Ausgabe- und Zeitlimits** — pro Host `maxOutputBytes` mit expliziter Truncate-Markierung; pro Host `timeoutMs` (per-Call hat Vorrang)
+- **Sequenzielles Lesen** — `ssh_read_file` liefert einen Bytebereich (Standard 64 KB) mit `nextOffset` zur Fortsetzung
+- **Status-Snapshots** — `ssh_server_status`: CPU/RAM/Disk/Uptime in einem Aufruf, busybox/OpenWrt- und RouterOS-Varianten
 - **Dateiübertragung** — SFTP mit automatischem base64-exec-Fallback für Hosts ohne sftp-server (OpenWrt/dropbear), geschriebene Bytes werden verifiziert
 - **RouterOS-Bewusst** — MikroTik-Hosts werden mit `"shell": "routeros"` markiert
 - **Server-Instruktionen** — `docs/INSTRUCTIONS.md` wird dem MCP-Client automatisch bereitgestellt
@@ -31,10 +37,11 @@ Drei Transports werden unterstützt:
 
 | Werkzeug | Zweck |
 |----------|-------|
-| `ssh_list_hosts` | Konfigurierte Hosts und Metadaten auflisten |
-| `ssh_exec` | Remote-Befehl ausführen |
-| `ssh_read_file` | Remote-Datei lesen (`cat`) |
+| `ssh_list_hosts` | Konfigurierte Hosts und Metadaten auflisten (inkl. `hostKeyPinned`) |
+| `ssh_exec` | Remote-Befehl ausführen (policy-geprüft, Ausgabe begrenzt) |
+| `ssh_read_file` | Bytebereich einer Remote-Datei lesen (Standard 64 KB, Fortsetzung via `offset`) |
 | `ssh_write_file` | Remote-Datei schreiben (SFTP auf direct-Hosts, base64-exec auf ssh3; ≤48 KB) |
+| `ssh_server_status` | CPU/RAM/Disk/Uptime-Snapshot |
 
 ## Installation
 

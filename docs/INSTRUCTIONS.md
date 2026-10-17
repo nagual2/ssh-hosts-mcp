@@ -4,9 +4,10 @@ Unified SSH/SSH3 access for infrastructure hosts. Use MCP tools instead of raw `
 
 ## Workflow
 
-1. Call **`ssh_list_hosts`** if you are unsure of `host_id` or transport type.
+1. Call **`ssh_list_hosts`** if you are unsure of `host_id` or transport type (each entry shows `hostKeyPinned`).
 2. Run commands with **`ssh_exec`** (`host_id` + `command`).
 3. Use **`ssh_read_file`** / **`ssh_write_file`** only on **`direct`** and **`ssh3`** hosts (not `dslab-ml`).
+4. Use **`ssh_server_status`** for a one-call CPU/mem/disk/uptime snapshot.
 
 Always pass `host_id` from the registry — never embed IP, user, or key paths in tool arguments.
 
@@ -14,12 +15,13 @@ Always pass `host_id` from the registry — never embed IP, user, or key paths i
 
 | Tool | Purpose |
 |------|---------|
-| `ssh_list_hosts` | List configured hosts and metadata (`target` = ssh3 `user@host:port/urlPath`) |
-| `ssh_exec` | Run a remote command |
-| `ssh_read_file` | Read file via `cat` (direct and ssh3 hosts) |
+| `ssh_list_hosts` | List configured hosts and metadata (`target` = ssh3 `user@host:port/urlPath`, `hostKeyPinned`) |
+| `ssh_exec` | Run a remote command (policy-checked; output capped by `maxOutputBytes`) |
+| `ssh_read_file` | Read a byte-range of a file (default first 65536 bytes; continue with `offset`) — direct and ssh3 hosts |
 | `ssh_write_file` | Write file: **SFTP** on `direct` hosts (base64-exec fallback), **base64-exec** on `ssh3` hosts (48 KB limit) |
+| `ssh_server_status` | CPU/mem/disk/uptime snapshot (busybox/OpenWrt or RouterOS variant, chosen by `shell`) |
 
-**Params:** `host_id`, **`filePath`** (not `path`), `content`. Missing `filePath` used to write to a literal file named `undefined` — server now rejects that.
+**Params:** `host_id`, **`filePath`** (not `path`), `content`, `offset`, `limit`. Missing `filePath` used to write to a literal file named `undefined` — server now rejects that.
 
 **OpenWrt:** SFTP needs `openssh-sftp-server` (or dropbear sftp). Fallback `base64 -d` still needs `coreutils-base64` (busybox has no base64 applet).
 
@@ -27,7 +29,19 @@ Always pass `host_id` from the registry — never embed IP, user, or key paths i
 
 JSON: `success`, `host_id`, `exitCode`, `stdout`, `stderr`. Check `success` / `exitCode` before assuming the command worked.
 
-Default timeout: **120000 ms**. Lower for quick probes (`uname`, `ping`).
+Default timeout: **120000 ms**, or the host's `timeoutMs` when the call omits it. Lower per call for quick probes (`uname`, `ping`).
+
+## Policy, limits and confinement (v1.2.0)
+
+- **Never-allowed denylist** — always applied before any configuration: `rm -rf /` (and short-form variants), `mkfs`, `dd … of=/dev/*`, `curl|sh` / `wget|sh`, fork bombs, `chmod … /`, redirects into block devices. These cannot be re-enabled by allow-lists; a blocked call returns an error naming the rule.
+- **`policy.allow` / `policy.deny`** — per host or top-level `defaults`; JS regex strings. `deny` beats `allow`; in whitelist mode (`allow` present) a non-matching command is rejected, and commands with shell chaining metacharacters (`; & | < > \` $()`, newline) are rejected too. Exception: RouterOS hosts (`shell: "routeros"`) keep pipes valid.
+- **`allowedPaths`** — optional per host: `{"read": ["/etc", "/var/log"], "write": ["/tmp"]}`. Remote paths must be absolute POSIX without `..` segments; without a list the path space is unconstrained.
+- **`maxOutputBytes`** — optional per host / `defaults`: stdout is truncated with a `[output truncated at N bytes]` marker (protects the model context from giant logs).
+- **`trustedHostKey`** — optional per host (direct transport): sha256 base64 of the host key; plain, unpadded and `SHA256:`-prefixed forms are accepted. A mismatch refuses the connection. `ssh_list_hosts` flags hosts without a pin (`hostKeyPinned: false`).
+
+### `ssh_read_file` paging
+
+Params: `offset` (byte offset, default 0), `limit` (max bytes, default 65536). Response JSON adds `offset`, `limit`, `truncated`, `nextOffset` (set when the byte budget was consumed — continue with `offset: nextOffset`). Remote side is `head -c` / `tail -c +N | head -c` (busybox-safe).
 
 ## Host registry
 
@@ -102,7 +116,7 @@ Runs `wsl bash -lc 'ssh -o BatchMode=yes <wslHost> <command>'`.
 
 ## Adding a host
 
-Edit `hosts.local.json` (real addresses) or `hosts.json` (anonymized template) under `"hosts"`:
+Edit `hosts.local.json` (real addresses) or `hosts.json` (anonymized template) under `"hosts"`. An optional top-level `"defaults"` object is shallow-merged into every host (per-host values win): put `maxOutputBytes`, `timeoutMs`, `policy`, `allowedPaths` there once instead of repeating per host.
 
 ```json
 "my-host": {
@@ -113,7 +127,24 @@ Edit `hosts.local.json` (real addresses) or `hosts.json` (anonymized template) u
   "port": 22,
   "privateKeyPath": "~/.ssh/id_ed25519_example",
   "shell": "bash",
+  "trustedHostKey": "SHA256:AbC…",
+  "maxOutputBytes": 262144,
   "notes": "optional"
+}
+```
+
+With policy and path confinement:
+
+```json
+"guarded-host": {
+  "label": "Human label",
+  "transport": "direct",
+  "host": "192.0.2.x",
+  "user": "root",
+  "privateKeyPath": "~/.ssh/id_ed25519_example",
+  "policy": { "allow": ["^opkg\\s", "^logread", "^uname"], "deny": ["^reboot"] },
+  "allowedPaths": { "read": ["/etc", "/var/log"], "write": ["/tmp"] },
+  "maxOutputBytes": 131072
 }
 ```
 

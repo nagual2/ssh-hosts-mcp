@@ -20,6 +20,12 @@ ssh-hosts-mcp — это сервер [Model Context Protocol](https://modelcont
 
 - **Реестр хостов** — абстракция `host_id`; агент никогда не угадывает IP/пользователя/ключ
 - **Три транспорта** — прямой `ssh2`, `ssh3` (QUIC поверх UDP), SSH через WSL-прокси
+- **Пиннинг host-ключей** — `trustedHostKey` (sha256) проверяется на каждом direct-соединении; хосты без пина помечаются в `ssh_list_hosts`; ssh3 — через TOFU `known_hosts`
+- **Политика команд** — встроенный never-allowed denylist (`rm -rf /`, `mkfs`, `dd of=/dev/*`, `curl|sh`, …) плюс per-host/`defaults` списки `policy.deny`/`policy.allow` (regex); deny побеждает, whitelist-режим fail-closed (RouterOS-пайпы исключены)
+- **Confinement путей** — опциональные `allowedPaths` (префиксы read/write), только абсолютные POSIX-пути, `..`-traversal отвергается
+- **Лимиты вывода и времени** — per-host `maxOutputBytes` с явной пометкой усечения; per-host `timeoutMs` (per-call приоритетнее)
+- **Постраничное чтение** — `ssh_read_file` возвращает диапазон байт (по умолчанию 64 КБ) с `nextOffset` для продолжения
+- **Снимки состояния** — `ssh_server_status`: CPU/mem/disk/uptime одним вызовом, варианты busybox/OpenWrt и RouterOS
 - **Передача файлов** — SFTP с автоматическим fallback на base64-exec для хостов без sftp-server (OpenWrt/dropbear), с проверкой числа записанных байт
 - **Поддержка RouterOS** — хосты MikroTik помечаются `"shell": "routeros"`
 - **Инструкции сервера** — `docs/INSTRUCTIONS.md` отдаётся MCP-клиенту автоматически
@@ -31,10 +37,11 @@ ssh-hosts-mcp — это сервер [Model Context Protocol](https://modelcont
 
 | Инструмент | Назначение |
 |------------|------------|
-| `ssh_list_hosts` | Список настроенных хостов и их метаданных |
-| `ssh_exec` | Выполнить команду на удалённом хосте |
-| `ssh_read_file` | Прочитать удалённый файл (`cat`) |
-| `ssh_write_file` | Записать удалённый файл (SFTP на direct-хостах, base64-exec на ssh3; ≤48 КБ) |
+| `ssh_list_hosts` | Список настроенных хостов и их метаданных (включая `hostKeyPinned`) |
+| `ssh_exec` | Выполнить команду (с проверкой политики, вывод ограничен) |
+| `ssh_read_file` | Прочитать диапазон байт файла (по умолчанию 64 КБ, продолжение через `offset`) |
+| `ssh_write_file` | Записать файл (SFTP на direct-хостах, base64-exec на ssh3; ≤48 КБ) |
+| `ssh_server_status` | Снимок CPU/mem/disk/uptime |
 
 ## Установка
 
