@@ -1,5 +1,6 @@
 #!/usr/bin/env node
 
+import crypto from 'node:crypto';
 import fs from 'node:fs';
 import path from 'node:path';
 import { spawn } from 'node:child_process';
@@ -53,7 +54,21 @@ function loadPrivateKey(privateKeyPath) {
   return fs.readFileSync(keyPath, 'utf8');
 }
 
-function connectDirect({ host, user, port, privateKeyPath, timeoutMs }) {
+function makeHostVerifier(expectedHash) {
+  if (!expectedHash) {
+    return undefined;
+  }
+  return (key) => {
+    const actualHash = crypto.createHash('sha256').update(key).digest('base64');
+    if (actualHash !== expectedHash) {
+      throw new Error(
+        `SSH host key verification failed: key hash ${actualHash} does not match trustedHostKey`,
+      );
+    }
+  };
+}
+
+function connectDirect({ host, user, port, privateKeyPath, timeoutMs, trustedHostKey }) {
   const privateKey = loadPrivateKey(privateKeyPath);
 
   return new Promise((resolve, reject) => {
@@ -87,11 +102,12 @@ function connectDirect({ host, user, port, privateKeyPath, timeoutMs }) {
         username: user,
         privateKey,
         readyTimeout: Math.min(timeoutMs, 30000),
+        hostVerifier: makeHostVerifier(trustedHostKey),
       });
   });
 }
 
-function execDirect({ host, user, port, privateKeyPath, command, timeoutMs }) {
+function execDirect({ host, user, port, privateKeyPath, command, timeoutMs, trustedHostKey }) {
   return new Promise((resolve, reject) => {
     let settled = false;
     const timer = setTimeout(() => {
@@ -101,7 +117,7 @@ function execDirect({ host, user, port, privateKeyPath, command, timeoutMs }) {
       }
     }, timeoutMs);
 
-    connectDirect({ host, user, port, privateKeyPath, timeoutMs })
+    connectDirect({ host, user, port, privateKeyPath, timeoutMs, trustedHostKey })
       .then((conn) => {
         conn.exec(command, (err, stream) => {
           if (err) {
@@ -150,6 +166,7 @@ async function writeDirectFile({
   user,
   port,
   privateKeyPath,
+  trustedHostKey,
   filePath,
   content,
   mode = 'rewrite',
@@ -159,7 +176,7 @@ async function writeDirectFile({
   const flags = mode === 'append' ? 'a' : 'w';
 
   try {
-    const conn = await connectDirect({ host, user, port, privateKeyPath, timeoutMs });
+    const conn = await connectDirect({ host, user, port, privateKeyPath, trustedHostKey, timeoutMs });
     try {
       const sftp = await new Promise((resolve, reject) => {
         conn.sftp((err, sftpClient) => {
@@ -284,7 +301,7 @@ async function writeSsh3File(profile, { filePath, content, mode = 'rewrite', tim
 
 function execWsl({ wslHost, command, timeoutMs }) {
   const remoteCmd = shellQuoteSingle(command);
-  const bashScript = `ssh -o ConnectTimeout=30 -o BatchMode=yes ${wslHost} ${remoteCmd}`;
+  const bashScript = `ssh -o ConnectTimeout=30 -o BatchMode=yes -o StrictHostKeyChecking=yes ${wslHost} ${remoteCmd}`;
   const args = ['bash', '-lc', bashScript];
 
   return new Promise((resolve, reject) => {
@@ -387,6 +404,7 @@ async function runOnHost(hostId, command, timeoutMs = 120000) {
       user: profile.user,
       port: profile.port,
       privateKeyPath: profile.privateKeyPath,
+      trustedHostKey: profile.trustedHostKey,
       command,
       timeoutMs,
     });
@@ -512,6 +530,8 @@ server.setRequestHandler(CallToolRequestSchema, async (request) => {
         target: ssh3TargetOrNull(h),
         user: h.user ?? null,
         shell: h.shell ?? 'bash',
+        trustedHostKey: h.trustedHostKey ?? null,
+        hostKeyPinned: Boolean(h.trustedHostKey),
         notes: h.notes ?? null,
       }));
       return {
