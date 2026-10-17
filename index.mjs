@@ -14,14 +14,19 @@ import {
   McpError,
 } from '@modelcontextprotocol/sdk/types.js';
 import {
+  buildReadCommand,
   buildSsh3Args,
   buildSsh3Target,
+  buildServerStatusCommand,
+  checkCommandPolicy,
+  checkPathAllowed,
   expandHome,
   loadHostsConfigFile,
   makeHostVerifier,
   normalizeExitCode,
   resolveConfigPath,
   shellQuoteSingle,
+  truncateOutput,
 } from './lib.mjs';
 
 const __dirname = path.dirname(fileURLToPath(import.meta.url));
@@ -373,30 +378,36 @@ function execSsh3(profile, command, timeoutMs) {
   });
 }
 
-async function runOnHost(hostId, command, timeoutMs = 120000) {
+async function runOnHost(hostId, command, timeoutMs) {
   const profile = getHost(hostId);
+  const effectiveTimeout = timeoutMs ?? profile.timeoutMs ?? 120000;
 
+  const policy = checkCommandPolicy(profile.policy, command, profile.shell);
+  if (!policy.allowed) {
+    throw new McpError(ErrorCode.InvalidParams, `${hostId}: ${policy.reason}`);
+  }
+
+  let result;
   if (profile.transport === 'wsl') {
-    return execWsl({ wslHost: profile.wslHost, command, timeoutMs });
-  }
-
-  if (profile.transport === 'ssh3') {
-    return execSsh3(profile, command, timeoutMs);
-  }
-
-  if (profile.transport === 'direct' || !profile.transport) {
-    return execDirect({
+    result = await execWsl({ wslHost: profile.wslHost, command, timeoutMs: effectiveTimeout });
+  } else if (profile.transport === 'ssh3') {
+    result = await execSsh3(profile, command, effectiveTimeout);
+  } else if (profile.transport === 'direct' || !profile.transport) {
+    result = await execDirect({
       host: profile.host,
       user: profile.user,
       port: profile.port,
       privateKeyPath: profile.privateKeyPath,
       trustedHostKey: profile.trustedHostKey,
       command,
-      timeoutMs,
+      timeoutMs: effectiveTimeout,
     });
+  } else {
+    throw new McpError(ErrorCode.InvalidParams, `Unsupported transport for ${hostId}: ${profile.transport}`);
   }
 
-  throw new McpError(ErrorCode.InvalidParams, `Unsupported transport for ${hostId}: ${profile.transport}`);
+  const limited = truncateOutput(result.stdout, profile.maxOutputBytes);
+  return limited.truncated ? { ...result, stdout: limited.text } : result;
 }
 
 function formatExecResult(hostId, result) {
@@ -450,7 +461,7 @@ const TOOLS = [
         },
         timeoutMs: {
           type: 'number',
-          description: 'Timeout in milliseconds (default 120000)',
+          description: 'Timeout in ms (default 120000; per-host timeoutMs overrides when omitted)',
           default: 120000,
         },
       },
@@ -459,12 +470,19 @@ const TOOLS = [
   },
   {
     name: 'ssh_read_file',
-    description: 'Read a remote file via cat (direct and ssh3 hosts; not wsl)',
+    description:
+      'Read a byte-range of a remote file (default first 65536 bytes; direct and ssh3 hosts; not wsl). Continue with offset=nextOffset.',
     inputSchema: {
       type: 'object',
       properties: {
         host_id: { type: 'string' },
         filePath: { type: 'string' },
+        offset: { type: 'number', description: 'Byte offset to start reading from (default 0)' },
+        limit: {
+          type: 'number',
+          description: 'Max bytes to return (default 65536)',
+          default: 65536,
+        },
         timeoutMs: { type: 'number', default: 120000 },
       },
       required: ['host_id', 'filePath'],
@@ -493,10 +511,22 @@ const TOOLS = [
       required: ['host_id', 'filePath', 'content'],
     },
   },
+  {
+    name: 'ssh_server_status',
+    description: 'CPU/mem/disk/uptime snapshot of a configured host (busybox/OpenWrt and RouterOS aware)',
+    inputSchema: {
+      type: 'object',
+      properties: {
+        host_id: { type: 'string' },
+        timeoutMs: { type: 'number', default: 120000 },
+      },
+      required: ['host_id'],
+    },
+  },
 ];
 
 const server = new Server(
-  { name: 'ssh-hosts-mcp', version: '1.1.3' },
+  { name: 'ssh-hosts-mcp', version: '1.2.0' },
   { capabilities: { tools: {} }, instructions: loadInstructions() },
 );
 
@@ -531,16 +561,16 @@ server.setRequestHandler(CallToolRequestSchema, async (request) => {
     }
 
     if (name === 'ssh_exec') {
-      const { host_id, command, timeoutMs = 120000 } = args ?? {};
+      const { host_id, command } = args ?? {};
       if (!host_id || !command) {
         throw new McpError(ErrorCode.InvalidParams, 'host_id and command are required');
       }
-      const result = await runOnHost(host_id, command, timeoutMs);
+      const result = await runOnHost(host_id, command, args?.timeoutMs);
       return { content: [{ type: 'text', text: formatExecResult(host_id, result) }] };
     }
 
     if (name === 'ssh_read_file') {
-      const { host_id, filePath, timeoutMs = 120000 } = args ?? {};
+      const { host_id, filePath } = args ?? {};
       if (!host_id || !filePath) {
         throw new McpError(
           ErrorCode.InvalidParams,
@@ -554,9 +584,39 @@ server.setRequestHandler(CallToolRequestSchema, async (request) => {
           `${host_id}: file read via MCP not supported (WSL proxy). Use ssh_exec with cat or tar|ssh from WSL.`,
         );
       }
-      const cmd = `cat ${shellQuoteSingle(filePath)}`;
-      const result = await runOnHost(host_id, cmd, timeoutMs);
-      return { content: [{ type: 'text', text: formatExecResult(host_id, result) }] };
+      const confined = checkPathAllowed(filePath, 'read', profile);
+      if (!confined.allowed) {
+        throw new McpError(ErrorCode.InvalidParams, `${host_id}: ${confined.reason}`);
+      }
+      const offset = args?.offset ?? 0;
+      const limit = args?.limit ?? 65536;
+      const cmd = buildReadCommand(filePath, offset, limit);
+      const result = await runOnHost(host_id, cmd, args?.timeoutMs);
+      const read = result.exitCode === 0 ? result.stdout : '';
+      const truncated = Buffer.byteLength(read, 'utf8') >= limit;
+      return {
+        content: [
+          {
+            type: 'text',
+            text: JSON.stringify(
+              {
+                success: result.exitCode === 0,
+                host_id,
+                filePath,
+                offset,
+                limit,
+                nextOffset: truncated ? offset + limit : null,
+                truncated,
+                exitCode: result.exitCode,
+                stderr: result.stderr,
+                content: read,
+              },
+              null,
+              2,
+            ),
+          },
+        ],
+      };
     }
 
     if (name === 'ssh_write_file') {
@@ -597,6 +657,10 @@ server.setRequestHandler(CallToolRequestSchema, async (request) => {
           `${host_id}: file write via MCP not supported. Use tar|ssh from WSL.`,
         );
       }
+      const confined = checkPathAllowed(filePath, 'write', profile);
+      if (!confined.allowed) {
+        throw new McpError(ErrorCode.InvalidParams, `${host_id}: ${confined.reason}`);
+      }
 
       const writeParams = {
         filePath,
@@ -629,6 +693,16 @@ server.setRequestHandler(CallToolRequestSchema, async (request) => {
           },
         ],
       };
+    }
+
+    if (name === 'ssh_server_status') {
+      const { host_id } = args ?? {};
+      if (!host_id) {
+        throw new McpError(ErrorCode.InvalidParams, 'host_id is required');
+      }
+      const profile = getHost(host_id);
+      const result = await runOnHost(host_id, buildServerStatusCommand(profile.shell), args?.timeoutMs);
+      return { content: [{ type: 'text', text: formatExecResult(host_id, result) }] };
     }
 
     throw new McpError(ErrorCode.MethodNotFound, `Unknown tool: ${name}`);

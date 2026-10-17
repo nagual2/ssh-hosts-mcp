@@ -2,7 +2,28 @@
 
 План доработки функционала. Составлен 2026-10-17 после сравнения с `overklassniy/ssh-mcp` и разведки GitHub (см. §«Разведка»); ранжирование по ценности/цене уточнено в тот же день.
 
-Текущее состояние: v1.1.2, транспорты `direct` / `ssh3` / `wsl`; tools: `ssh_list_hosts`, `ssh_exec`, `ssh_read_file`, `ssh_write_file`. Существующие гварды: `timeoutMs` на соединение/exec, `BASE64_EXEC_MAX_BYTES = 48_000`. Host-key verification есть только в ssh3 (TOFU); direct (ssh2) и wsl — нет.
+Текущее состояние: **v1.2.0**, транспорты `direct` / `ssh3` / `wsl`; tools: `ssh_list_hosts`, `ssh_exec`, `ssh_read_file`, `ssh_write_file`, `ssh_server_status`. Гварды: `timeoutMs` (+ per-host override), `BASE64_EXEC_MAX_BYTES = 48_000`, host-key verification на всех транспортах, policy-фильтр, confinement путей, лимит вывода, пагинация чтения (все — часть 1, реализована 2026-10-17, см. «Прогресс»).
+
+## Прогресс реализации (2026-10-17)
+
+| № | Пункт | Статус | Коммиты |
+|---|-------|--------|---------|
+| 1 | 🔒 Host-key verification direct/wsl | ✅ DONE | `1eab853`, `6aa668a` (boolean-семантика ssh2), `d189bc3` (3 формы формата пина) |
+| 2 | Лимит вывода exec + per-host `timeoutMs` | ✅ DONE | см. `feat`-коммит 1.2.0: `truncateOutput` в runOnHost (единая точка для всех транспортов) |
+| 3 | Hot-reload реестра | ✅ уже был в коде; добавлен unit-тест перечитывания | 1.2.0 |
+| 4 | Policy-фильтр (never-allowed + deny/allow + chaining-guard) | ✅ DONE, в `runOnHost` для всех транспортов; routeros-пайпы в whitelist не блокируются | 1.2.0 |
+| 5 | Confinement путей read/write | ✅ DONE: `checkPathAllowed` в `ssh_read_file`/`ssh_write_file`; без списков — не ограничено | 1.2.0 |
+| 6 | Постраничное чтение | ✅ DONE: `offset`/`limit` (default 64 KB), `tail -c +N \| head -c L`, ответ с `nextOffset` | 1.2.0 |
+| 7 | `ssh_server_status` | ✅ DONE: busybox/OpenWrt (`/proc`+free+df) и RouterOS (`/system resource print`); E2E на живом prod-openwrt — `success:true` | 1.2.0 |
+
+Тесты: 31/31 (`node --test`), smoke JSON-RPC: tools/list видит 5 tools; часть 1 закрыта полностью.
+
+### Статус копий (важно)
+| № | Путь | Что это | Состояние фикса host-key |
+|---|------|---------|--------------------------|
+| 1 | `C:\Git\project\ssh-hosts-mcp` | Вложенный git-репозиторий MCP-сервера (рабочая копия для разработки) | ✅ Исправлено, коммит `1eab853` |
+| 2 | `C:\Git\MCP\ssh-hosts-mcp` | Активная копия, подключённая в настройках MCP Cursor (сервер `ssh`) | ❌ Фикс не применен — не синхронизировано без команды Пилота |
+| 3 | `~/git/monorepo` (WSL) | Зеркало монорепо под WSL; синхронизация копий только через `git-sync-win` | — |
 
 ## Часть 1 — приоритет (реально пригодится)
 
@@ -10,7 +31,7 @@
 
 | № | Пункт | Что делать | Источник идеи | Критерий приёмки |
 |---|-------|------------|---------------|------------------|
-| 1 | 🔒 Исправление уязвимости: host-key verification для direct/wsl | [SECURITY FIX] pin отпечатка в hosts-конфиге или TOFU-файл (по образцу ssh3); хост без pin — явная пометка в `ssh_list_hosts`; несовпадение отпечатка → отказ соединения | `tufantunc` (`trustedHostKey` pin), `bvisible` (отказ при смене ключа) | unit-тест: несовпадение отпечатка → отказ; отсутствие pin — пометка в списке хостов |
+| 1 | ✅ [DONE] Исправление уязвимости: host-key verification для direct/wsl | [SECURITY FIX] `connectDirect` (ssh2) получил `hostVerifier` sha256 по `trustedHostKey` из профиля хоста; несовпадение отпечатка → отказ соединения; хост без pin — `host_key_pinned: false` в `ssh_list_hosts`; WSL: `StrictHostKeyChecking=yes`. Применено в `C:\Git\project\ssh-hosts-mcp` (коммит `1eab853`). Активная MCP-копия `C:\Git\MCP\ssh-hosts-mcp` — фикс еще не синхронизирован. | `tufantunc` (`trustedHostKey` pin), `bvisible` (отказ при смене ключа) | node --check OK; npm test 13 pass / 0 fail; коммит `1eab853` |
 | 2 | Лимит вывода exec | `maxOutputBytes` с усечением и структурированным кодом ошибки; per-host `timeoutMs` override | `overklassniy/ssh-mcp` (`[defaults]`), `classfang` (10 MiB default, `OUTPUT_LIMIT_EXCEEDED`) | unit-тест обрезки; отсутствие лимита в конфиге — прежнее поведение |
 | 3 | Hot-reload реестра | проверка mtime hosts-файла при каждом вызове; правки подхватываются без рестарта MCP-сервера | `overklassniy/ssh-mcp`, `bvisible` | unit-тест: правка tmp-конфига видна на следующем вызове |
 | 4 | Policy-фильтр команд | whitelist/blacklist regex для `ssh_exec` (глобальный defaults + per-host override); встроенный «never-allowed» denylist по умолчанию (`rm -rf /`, `mkfs`, `dd of=/dev/`, `curl\|sh`, fork-бомбы); в whitelist-режиме дополнительно отклонять метасимволы склейки (`; & \| \` $() > <` \n); deny побеждает, fail-closed | `overklassniy/ssh-mcp`, `classfang` (метасимвол-гварды), `tufantunc` (never-allowed), `bvisible` (deny wins) | unit-тесты: deny блокирует, allow приоритетнее, метасимвол в whitelist-режиме отклонён, ошибка называет сработавшее правило; E2E на prod-openwrt |
