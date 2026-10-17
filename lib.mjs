@@ -1,6 +1,7 @@
 // Pure helpers for ssh-hosts-mcp: config loading, quoting and ssh3 client
 // argument building. No side effects beyond reading config files.
 
+import crypto from 'node:crypto';
 import fs from 'node:fs';
 import os from 'node:os';
 import path from 'node:path';
@@ -30,6 +31,26 @@ export function normalizeExitCode(code) {
     return null;
   }
   return n >= 2 ** 31 ? n - 2 ** 32 : n;
+}
+
+// ssh2 hostVerifier sync contract: return true/false, never throw (a thrown
+// error escapes the kex handshake path with no catch and kills the process).
+// Accepts trustedHostKey in three forms: plain sha256-base64 with padding,
+// unpadded base64 (ssh-keygen prints fingerprints without "="), and the
+// "SHA256:<unpadded>" prefixed form.
+export function makeHostVerifier(expectedHash) {
+  if (typeof expectedHash !== 'string' || expectedHash.length === 0) {
+    return undefined;
+  }
+  const expected = expectedHash.replace(/^SHA256:/i, '').replace(/=+$/, '');
+  return (key) => {
+    const actual = crypto
+      .createHash('sha256')
+      .update(key)
+      .digest('base64')
+      .replace(/=+$/, '');
+    return actual === expected;
+  };
 }
 
 function requireField(profile, name) {

@@ -1,6 +1,6 @@
 {
   "name": "ssh-hosts-mcp",
-  "version": "1.1.2",
+  "version": "1.1.3",
   "private": true,
   "type": "module",
   "description": "Unified SSH MCP with host registry (direct + ssh3 + WSL/DSLab)",

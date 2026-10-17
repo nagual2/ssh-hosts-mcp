@@ -5,6 +5,7 @@ import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 
 const joinHome = (home, rel) => join(home, rel);
+import crypto from 'node:crypto';
 import {
   expandHome,
   shellQuoteSingle,
@@ -13,9 +14,38 @@ import {
   buildSsh3Args,
   loadHostsConfigFile,
   resolveConfigPath,
+  makeHostVerifier,
 } from '../lib.mjs';
 
 const FAKE_HOME = 'C:/Users/tester';
+
+const sha256b64 = (value) => crypto.createHash('sha256').update(value).digest('base64');
+
+test('makeHostVerifier returns undefined when no pin is configured', () => {
+  assert.equal(makeHostVerifier(undefined), undefined);
+  assert.equal(makeHostVerifier(null), undefined);
+  assert.equal(makeHostVerifier(''), undefined);
+  assert.equal(makeHostVerifier(42), undefined);
+});
+
+test('makeHostVerifier matches plain sha256 base64 (padded) host key', () => {
+  const verifier = makeHostVerifier(sha256b64('host-key-blob'));
+  assert.equal(verifier(Buffer.from('host-key-blob')), true);
+});
+
+test('makeHostVerifier accepts ssh-keygen style: SHA256 prefix and no padding', () => {
+  const unpadded = sha256b64('host-key-blob').replace(/=+$/, '');
+  const verifier = makeHostVerifier(`SHA256:${unpadded}`);
+  assert.equal(verifier(Buffer.from('host-key-blob')), true);
+  const verifier2 = makeHostVerifier(unpadded);
+  assert.equal(verifier2(Buffer.from('host-key-blob')), true);
+});
+
+test('makeHostVerifier returns false on mismatched key, never throws', () => {
+  const verifier = makeHostVerifier(sha256b64('host-key-blob'));
+  assert.equal(verifier(Buffer.from('other-key')), false);
+  assert.equal(verifier(Buffer.from('')), false);
+});
 
 test('expandHome expands leading ~/ to home dir', () => {
   assert.equal(expandHome('~/key.pem', FAKE_HOME), joinHome(FAKE_HOME, 'key.pem'));

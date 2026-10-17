@@ -1,6 +1,5 @@
 #!/usr/bin/env node
 
-import crypto from 'node:crypto';
 import fs from 'node:fs';
 import path from 'node:path';
 import { spawn } from 'node:child_process';
@@ -19,6 +18,7 @@ import {
   buildSsh3Target,
   expandHome,
   loadHostsConfigFile,
+  makeHostVerifier,
   normalizeExitCode,
   resolveConfigPath,
   shellQuoteSingle,
@@ -52,16 +52,6 @@ function loadPrivateKey(privateKeyPath) {
     throw new Error(`Private key not found: ${keyPath}`);
   }
   return fs.readFileSync(keyPath, 'utf8');
-}
-
-// ssh2 hostVerifier semantics: return true/false synchronously (verify() is
-// called with the returned value). Never throw here — the handshake code has
-// no catch, an exception would kill the process.
-function makeHostVerifier(expectedHash) {
-  if (!expectedHash) {
-    return undefined;
-  }
-  return (key) => crypto.createHash('sha256').update(key).digest('base64') === expectedHash;
 }
 
 function connectDirect({ host, user, port, privateKeyPath, timeoutMs, trustedHostKey }) {
@@ -506,7 +496,7 @@ const TOOLS = [
 ];
 
 const server = new Server(
-  { name: 'ssh-hosts-mcp', version: '1.1.1' },
+  { name: 'ssh-hosts-mcp', version: '1.1.3' },
   { capabilities: { tools: {} }, instructions: loadInstructions() },
 );
 
