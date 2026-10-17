@@ -54,18 +54,14 @@ function loadPrivateKey(privateKeyPath) {
   return fs.readFileSync(keyPath, 'utf8');
 }
 
+// ssh2 hostVerifier semantics: return true/false synchronously (verify() is
+// called with the returned value). Never throw here — the handshake code has
+// no catch, an exception would kill the process.
 function makeHostVerifier(expectedHash) {
   if (!expectedHash) {
     return undefined;
   }
-  return (key) => {
-    const actualHash = crypto.createHash('sha256').update(key).digest('base64');
-    if (actualHash !== expectedHash) {
-      throw new Error(
-        `SSH host key verification failed: key hash ${actualHash} does not match trustedHostKey`,
-      );
-    }
-  };
+  return (key) => crypto.createHash('sha256').update(key).digest('base64') === expectedHash;
 }
 
 function connectDirect({ host, user, port, privateKeyPath, timeoutMs, trustedHostKey }) {
