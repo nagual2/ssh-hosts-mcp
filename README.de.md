@@ -26,6 +26,7 @@ Drei Transports werden unterstützt:
 - **Ausgabe- und Zeitlimits** — pro Host `maxOutputBytes` mit expliziter Truncate-Markierung; pro Host `timeoutMs` (per-Call hat Vorrang)
 - **Sequenzielles Lesen** — `ssh_read_file` liefert einen Bytebereich (Standard 64 KB) mit `nextOffset` zur Fortsetzung
 - **Status-Snapshots** — `ssh_server_status`: CPU/RAM/Disk/Uptime in einem Aufruf, busybox/OpenWrt- und RouterOS-Varianten
+- **WSL-Idle-Wake** — ssh3-Hosts mit `"wake": "wsl"` beleben eine heruntergefahrene WSL-Distro vor Aufrufen automatisch (Idle-Shutdown tötet sonst eingehendes QUIC)
 - **Dateiübertragung** — SFTP mit automatischem base64-exec-Fallback für Hosts ohne sftp-server (OpenWrt/dropbear), geschriebene Bytes werden verifiziert
 - **RouterOS-Bewusst** — MikroTik-Hosts werden mit `"shell": "routeros"` markiert
 - **Server-Instruktionen** — `docs/INSTRUCTIONS.md` wird dem MCP-Client automatisch bereitgestellt

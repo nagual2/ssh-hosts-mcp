@@ -25,6 +25,7 @@ import {
   makeHostVerifier,
   normalizeExitCode,
   resolveConfigPath,
+  shouldWake,
   shellQuoteSingle,
   truncateOutput,
 } from './lib.mjs';
@@ -332,13 +333,53 @@ function execWsl({ wslHost, command, timeoutMs }) {
   });
 }
 
+// Timestamp of the last completed ssh3 exec (module-wide: the distro state is
+// shared by all ssh3 hosts). Used by the WSL idle wake gate.
+let lastSsh3Success = 0;
+
+// Wake a shut-down WSL distro so inbound QUIC to the ssh3 server works again.
+// wsl.exe goes through LxssManager (the only thing that revives the VM) and
+// its startup re-runs systemd, which brings the ssh3 unit and port forwards
+// back. `--exec true` avoids a login shell.
+function wakeWsl(timeoutMs = 20000) {
+  return new Promise((resolve, reject) => {
+    const child = spawn('wsl.exe', ['--exec', 'true'], { windowsHide: true });
+    const timer = setTimeout(() => {
+      child.kill();
+      reject(new Error(`WSL wake timed out after ${timeoutMs}ms`));
+    }, timeoutMs);
+    child.on('error', (err) => {
+      clearTimeout(timer);
+      reject(new Error(`WSL wake failed: ${err.message}`));
+    });
+    child.on('close', (code) => {
+      clearTimeout(timer);
+      if (code === 0) {
+        resolve();
+      } else {
+        reject(new Error(`WSL wake failed (exit ${code})`));
+      }
+    });
+  });
+}
+
 function execSsh3(profile, command, timeoutMs) {
   const clientPath = profile.clientPath || 'ssh3-client';
   const args = buildSsh3Args(profile, command);
   // client logs (zerolog) go to stderr; keep them out of exec results
   const env = { ...process.env, SSH3_LOG_LEVEL: profile.logLevel ?? 'error' };
 
-  return new Promise((resolve, reject) => {
+  return new Promise(async (resolve, reject) => {
+    // WSL idle wake gate: after the threshold the target distro is likely
+    // shut down and inbound QUIC is dead — revive it before dialing.
+    if (shouldWake(profile, Date.now(), lastSsh3Success)) {
+      try {
+        await wakeWsl();
+      } catch (err) {
+        reject(err);
+        return;
+      }
+    }
     // stdin must not be an open pipe: the current ssh3 client streams its
     // stdin to the remote and blocks forever when the parent never closes it
     // (the remote command may already have exited). Exec carries no input.
@@ -372,6 +413,9 @@ function execSsh3(profile, command, timeoutMs) {
       clearTimeout(timer);
       if (!settled) {
         settled = true;
+        if (code !== null) {
+          lastSsh3Success = Date.now();
+        }
         resolve({ stdout, stderr, exitCode: normalizeExitCode(code) ?? 1 });
       }
     });
@@ -526,7 +570,7 @@ const TOOLS = [
 ];
 
 const server = new Server(
-  { name: 'ssh-hosts-mcp', version: '1.2.0' },
+  { name: 'ssh-hosts-mcp', version: '1.3.0' },
   { capabilities: { tools: {} }, instructions: loadInstructions() },
 );
 

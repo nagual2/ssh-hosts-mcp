@@ -92,6 +92,7 @@ Spawns the ssh3 client (`clientPath`, default `ssh3-client` on PATH): `ssh3 [-pr
 - Server cert must be pinned in `~/.ssh3/known_hosts` (TOFU) or set `"insecure": true` (dev only).
 - Requires ssh3 server ≥ 0.1.8 (fork `nagual2/ssh3`); QUIC over UDP, so firewalls must pass UDP to the server port.
 - Flags always go **before** the positional target (Go `flag.Parse` stops at the first positional).
+- **WSL-backed ssh3 hosts**: add `"wake": "wsl"` to the profile. WSL shuts an idle distro down (~30 s without a client session), which kills inbound QUIC; with the flag the server detects >25 s of idle and revives the distro via `wsl.exe` before dialing. First call after a pause takes up to ~7 s (wake + boot); hot calls are unaffected. A failed wake returns a structured error (`WSL wake failed…`) instead of a hanging timeout.
 
 ### `wsl` (`dslab-ml`)
 

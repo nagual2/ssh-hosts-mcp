@@ -53,6 +53,29 @@ export function makeHostVerifier(expectedHash) {
   };
 }
 
+// ---------- WSL idle wake (variant 3) ----------
+
+// WSL 3.x shuts an idle distro down after ~30s (LxssManager counts only
+// client-side wsl.exe sessions, not processes inside the distro), which kills
+// inbound QUIC to ssh3 servers inside it. Threshold stays below the observed
+// idle window so the gate fires before the distro dies.
+export const WAKE_IDLE_THRESHOLD_MS = 25_000;
+
+/**
+ * True when the ssh3 call should wake the target distro first: only for
+ * profiles declaring "wake": "wsl"; unknown distro state (no successful call
+ * yet) wakes; idle longer than the threshold wakes.
+ */
+export function shouldWake(profile, now, lastSuccess) {
+  if (profile?.wake !== 'wsl') {
+    return false;
+  }
+  if (typeof lastSuccess !== 'number') {
+    return true;
+  }
+  return now - lastSuccess >= WAKE_IDLE_THRESHOLD_MS;
+}
+
 function requireField(profile, name) {
   const value = profile[name];
   if (typeof value !== 'string' || value.length === 0 || /\s/.test(value)) {

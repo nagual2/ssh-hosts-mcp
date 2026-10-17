@@ -31,7 +31,7 @@ All connections go through named host profiles. Addresses, users, ports and priv
 
 - **RouterOS hosts** (`mikrotik-*`, `shell: "routeros"`): RouterOS CLI, not bash. Use `/system print` style commands; RouterOS pipes (`/log print | where …`) are valid syntax and allowed even in whitelist mode; no `&&`, no Linux paths.
 - **WSL-proxied hosts** (`transport: "wsl"`, e.g. `dslab-ml`): `ssh_exec` only. For files use `ssh_exec` with `cat`, or `tar|ssh` manually from WSL.
-- **ssh3 hosts**: the server certificate must be pinned (TOFU) on first use from a terminal; QUIC needs UDP open to the server port.
+- **ssh3 hosts**: the server certificate must be pinned (TOFU) on first use from a terminal; QUIC needs UDP open to the server port. Hosts with `"wake": "wsl"` auto-revive a shut-down WSL distro before calls — after a long pause the first call may take up to ~7 s (wake + boot); hot calls stay fast.
 - **OpenWrt hosts** (dropbear): MCP file tools handle transfer transparently; only manual CLI `scp` needs `-O`.
 
 ## Anti-patterns

@@ -15,6 +15,7 @@ import {
   loadHostsConfigFile,
   resolveConfigPath,
   makeHostVerifier,
+  shouldWake,
   checkCommandPolicy,
   checkPathAllowed,
   truncateOutput,
@@ -299,6 +300,23 @@ test('buildReadCommand: offset 0 uses plain head, invalid args rejected', () => 
   assert.equal(buildReadCommand('/f', 0, 100), `head -c 100 '/f'`);
   assert.throws(() => buildReadCommand('/f', -1, 100));
   assert.throws(() => buildReadCommand('/f', 0, 0));
+});
+
+test('shouldWake: wsl-targets wake on unknown state or after idle threshold', () => {
+  const now = 1_000_000;
+  assert.equal(shouldWake({ wake: 'wsl' }, now, undefined), true); // unknown distro state
+  assert.equal(shouldWake({ wake: 'wsl' }, now, now - 24_000), false); // fresh
+  assert.equal(shouldWake({ wake: 'wsl' }, now, now - 25_000), true); // at threshold
+  assert.equal(shouldWake({ wake: 'wsl' }, now, now - 26_000), true);
+  assert.equal(shouldWake({ wake: 'wsl' }, now, now - 24_999), false);
+});
+
+test('shouldWake: non-wsl profiles never wake', () => {
+  const now = 1_000_000;
+  assert.equal(shouldWake({}, now, undefined), false);
+  assert.equal(shouldWake({ wake: 'ssh3' }, now, undefined), false);
+  assert.equal(shouldWake({ wake: null }, now, undefined), false);
+  assert.equal(shouldWake(undefined, now, undefined), false);
 });
 
 // ---------- server status ----------

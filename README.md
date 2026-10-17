@@ -26,6 +26,7 @@ Three transports are supported:
 - **Output & time limits** — per-host `maxOutputBytes` truncation with an explicit marker; per-host `timeoutMs` (per-call overrides)
 - **Paged file reads** — `ssh_read_file` returns a byte range (default 64 KB) with `nextOffset` for continuation
 - **Health snapshots** — `ssh_server_status`: CPU/mem/disk/uptime in one call, busybox/OpenWrt and RouterOS variants
+- **WSL idle wake** — `"wake": "wsl"` ssh3 hosts auto-revive a shut-down WSL distro before calls (idle shutdown otherwise kills inbound QUIC)
 - **File transfer** — SFTP with automatic base64-exec fallback for hosts without sftp-server (OpenWrt/dropbear), written bytes verified
 - **RouterOS-aware** — MikroTik hosts flagged with `"shell": "routeros"`
 - **Server instructions** — `docs/INSTRUCTIONS.md` is served to the MCP client automatically

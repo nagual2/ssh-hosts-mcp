@@ -26,6 +26,7 @@ ssh-hosts-mcp — это сервер [Model Context Protocol](https://modelcont
 - **Лимиты вывода и времени** — per-host `maxOutputBytes` с явной пометкой усечения; per-host `timeoutMs` (per-call приоритетнее)
 - **Постраничное чтение** — `ssh_read_file` возвращает диапазон байт (по умолчанию 64 КБ) с `nextOffset` для продолжения
 - **Снимки состояния** — `ssh_server_status`: CPU/mem/disk/uptime одним вызовом, варианты busybox/OpenWrt и RouterOS
+- **WSL idle wake** — ssh3-хосты с `"wake": "wsl"` автоматически оживляют уснувшую WSL-дистро перед вызовами (idle-шатдаун иначе убивает входящий QUIC)
 - **Передача файлов** — SFTP с автоматическим fallback на base64-exec для хостов без sftp-server (OpenWrt/dropbear), с проверкой числа записанных байт
 - **Поддержка RouterOS** — хосты MikroTik помечаются `"shell": "routeros"`
 - **Инструкции сервера** — `docs/INSTRUCTIONS.md` отдаётся MCP-клиенту автоматически
