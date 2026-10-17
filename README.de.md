@@ -127,6 +127,21 @@ Vollständige Feldreferenz: [`hosts.json`](hosts.json) und [`docs/INSTRUCTIONS.m
 npm test   # node --test test/lib.test.mjs — reine Helfer, ohne Netzwerk
 ```
 
+## WSL-Zugriffsvergleich (ssh3-MCP vs wsl.exe)
+
+[`test/e2e-wsl-compare.mjs`](test/e2e-wsl-compare.mjs) misst beide Zugriffspfade gegen einen lebenden WSL-ssh3-Host: Kanal A startet den echten MCP-stdio-Server, Kanal B ruft `wsl.exe` direkt auf. Ergebnisse (2026-10-17, LAN, Median aus 5):
+
+| Prüfung | ssh3 (MCP) | wsl.exe |
+|---------|------------|---------|
+| `echo`-Roundtrip | **75 ms** (63–93) | 205 ms |
+| Exit-Code-Weitergabe (`exit 42`) | 42 ✓, 63 ms | 42 ✓, 215 ms |
+| 4 KB schreiben + zurücklesen | byte-genau | — |
+| 1 MB Ausgabevolumen | 1000000 ✓, 120 ms | 1000000 ✓, 243 ms |
+| nach 35 s Leerlauf | **lebend** mit `"wake": "wsl"` (Wake ≈ 6,7 s) | weckt die Distro in 0,3–5 s |
+| `ssh_server_status` | ✓ | — |
+
+Fazit: ssh3 ist auf dem Hot Path ~3× schneller und byte-genau; eine Leerlauf-WSL-Distro fährt herunter (~30 s) und tötet eingehendes QUIC — Hosts mit `"wake": "wsl"` heilen sich selbst.
+
 ## Lizenz
 
 [MIT](LICENSE) © 2026 nagual2

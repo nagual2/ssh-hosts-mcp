@@ -2,21 +2,23 @@
 
 План доработки функционала. Составлен 2026-10-17 после сравнения с `overklassniy/ssh-mcp` и разведки GitHub (см. §«Разведка»); ранжирование по ценности/цене уточнено в тот же день.
 
-Текущее состояние: **v1.2.0**, транспорты `direct` / `ssh3` / `wsl`; tools: `ssh_list_hosts`, `ssh_exec`, `ssh_read_file`, `ssh_write_file`, `ssh_server_status`. Гварды: `timeoutMs` (+ per-host override), `BASE64_EXEC_MAX_BYTES = 48_000`, host-key verification на всех транспортах, policy-фильтр, confinement путей, лимит вывода, пагинация чтения (все — часть 1, реализована 2026-10-17, см. «Прогресс»).
+Текущее состояние: **v1.3.0**, транспорты `direct` / `ssh3` / `wsl`; tools: `ssh_list_hosts`, `ssh_exec`, `ssh_read_file`, `ssh_write_file`, `ssh_server_status`; wake-gate `"wake": "wsl"` для ssh3-хостов поверх WSL. Гварды: `timeoutMs` (+ per-host override), `BASE64_EXEC_MAX_BYTES = 48_000`, host-key verification на всех транспортах, policy-фильтр, confinement путей, лимит вывода, пагинация чтения (часть 1 закрыта полностью, см. «Прогресс»).
 
 ## Прогресс реализации (2026-10-17)
 
 | № | Пункт | Статус | Коммиты |
 |---|-------|--------|---------|
 | 1 | 🔒 Host-key verification direct/wsl | ✅ DONE | `1eab853`, `6aa668a` (boolean-семантика ssh2), `d189bc3` (3 формы формата пина) |
-| 2 | Лимит вывода exec + per-host `timeoutMs` | ✅ DONE | см. `feat`-коммит 1.2.0: `truncateOutput` в runOnHost (единая точка для всех транспортов) |
+| 2 | Лимит вывода exec + per-host `timeoutMs` | ✅ DONE | 1.2.0 (`b12f68e`): `truncateOutput` в runOnHost (единая точка для всех транспортов) |
 | 3 | Hot-reload реестра | ✅ уже был в коде; добавлен unit-тест перечитывания | 1.2.0 |
 | 4 | Policy-фильтр (never-allowed + deny/allow + chaining-guard) | ✅ DONE, в `runOnHost` для всех транспортов; routeros-пайпы в whitelist не блокируются | 1.2.0 |
 | 5 | Confinement путей read/write | ✅ DONE: `checkPathAllowed` в `ssh_read_file`/`ssh_write_file`; без списков — не ограничено | 1.2.0 |
 | 6 | Постраничное чтение | ✅ DONE: `offset`/`limit` (default 64 KB), `tail -c +N \| head -c L`, ответ с `nextOffset` | 1.2.0 |
-| 7 | `ssh_server_status` | ✅ DONE: busybox/OpenWrt (`/proc`+free+df) и RouterOS (`/system resource print`); E2E на живом prod-openwrt — `success:true` | 1.2.0 |
+| 7 | tool `ssh_server_status` | ✅ DONE: busybox/OpenWrt (`/proc`+free+df) и RouterOS (`/system resource print`); E2E на живом prod-openwrt | 1.2.0 |
+| 8 | WSL idle wake-gate `"wake": "wsl"` | ✅ DONE: `shouldWake` (порог 25 с) + `wakeWsl` в `execSsh3`; живая проверка — idle-проба перевёрнута из таймаута в «survived» (6.7 с) | 1.3.0 (`2c2fb18`) |
+| 9 | Стенд `test/e2e-wsl-compare.mjs` (ssh3-MCP vs `wsl.exe`) | ✅ DONE: 6/6, результаты в README §«WSL access comparison» | `53e6d54` |
 
-Тесты: 31/31 (`node --test`), smoke JSON-RPC: tools/list видит 5 tools; часть 1 закрыта полностью.
+Тесты: 33/33 (`node --test`); активация в рабочем реестре Пилота: `wsl-ssh3` с `wake:wsl`, hot-reload + wake подтверждены живьём. Часть 1 закрыта полностью.
 
 ### Статус копий (важно)
 | № | Путь | Что это | Состояние фикса host-key |
